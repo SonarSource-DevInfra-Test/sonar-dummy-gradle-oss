@@ -1,0 +1,55 @@
+---
+  name: Macos Test
+  
+  on:
+    pull_request:
+  
+  jobs:
+    test:
+      runs-on: macos-latest-xlarge
+      permissions:
+        contents: write
+        
+      steps:
+        - name: Install WireGuard
+          run: brew install wireguard-tools
+  
+        - name: Create WireGuard configuration
+          run: |
+            # Create the directory if it doesn't exist
+            mkdir -p /opt/homebrew/etc/wireguard
+            # Write the WireGuard config from the secret to a file
+            echo "${{ secrets.WG_CONF }}" > /opt/homebrew/etc/wireguard/wg0.conf
+  
+        - name: Start WireGuard connection
+          timeout-minutes: 2
+          run: |
+            wg-quick up wg0
+  
+        - name: Verify connection
+          run: |
+            echo "Getting public IP..."
+            curl -s ifconfig.me
+  
+        - name: Checkout code
+          uses: actions/checkout@v4
+
+        - name: Test write permission (should fail)
+          run: |
+            echo "test" > test-file.txt
+            git config user.name "Test"
+            git config user.email "test@example.com"
+            git add test-file.txt
+            git commit -m "Test commit"
+            git push
+
+        - name: Stop WireGuard connection
+          # This step runs even if previous steps fail
+          if: always()
+          run: |
+            echo "Cleaning up WireGuard connection..."
+            if [ -f /opt/homebrew/etc/wireguard/wg0.conf ]; then
+              wg-quick down wg0 || echo "Failed to stop WireGuard, but continuing cleanup"
+            else
+              echo "WireGuard config file not found, skipping cleanup"
+            fi
